@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>単層ルーレット（原因自動付与＋保存）</title>
+  <style>
+    body{font-family:sans-serif;background:#f9fafb;margin:0;padding:2rem;line-height:1.6;}
+    h1{font-size:1.5rem;font-weight:700;margin-bottom:1rem;}
+    textarea{width:100%;box-sizing:border-box;height:140px;border:1px solid #e5e7eb;border-radius:.5rem;padding:.5rem;resize:vertical;background:#fff;}
+    button{display:inline-block;margin-top:.75rem;padding:.5rem 1.25rem;font-size:1rem;font-weight:600;border:none;border-radius:.5rem;cursor:pointer;transition:opacity .2s;}
+    button:hover{opacity:.85;}
+    #updateBtn{background:#3b82f6;color:#fff;}
+    #wheelContainer{position:relative;width:480px;height:480px;margin:2rem auto 0;}
+    #wheelCanvas{width:100%;height:100%;}
+    p.note{font-size:.85rem;color:#555;margin-top:.5rem;}
+  </style>
+</head>
+<body>
+  <h1>単層ルーレット（原因自動付与＋保存）</h1>
+  <p>▶️ 行動をカンマ／改行で入力 → <em>更新 & 保存</em><br>
+  原因は自動で追加されます（編集不要）。</p>
+  <textarea id="itemInput"></textarea>
+  <br><button id="updateBtn">更新 & 保存</button>
+  <p class="note">※ 行動リストは <em>localStorage</em> に保存されます。原因マッピングはコード内 <code>CAUSE_MAP</code> と <code>DEFAULT_CAUSES</code> で編集可能です。</p>
+
+  <div id="wheelContainer"><canvas id="wheelCanvas" width="480" height="480"></canvas></div>
+
+  <script>
+    const STORAGE_KEY='rouletteItems';
+    const COLORS=['#60a5fa','#34d399','#fbbf24','#f87171','#a78bfa','#f472b6','#fb923c','#4ade80','#facc15','#38bdf8','#fda4af','#bef264'];
+
+    const CAUSE_MAP={
+      '当日欠勤':['体調不良','家庭の事情','モチベ低下'],
+      '悪口を言う':['ストレス','自己防衛'],
+      'マウントを取る':['自己肯定感不足','競争意識'],
+      '高圧的な態度':['権力志向','フラストレーション'],
+      'できることでもやらない':['モチベ低下','責任感不足'],
+      '責任転嫁':['自己防衛','失敗回避']
+    };
+    const DEFAULT_CAUSES=['ストレス','人間関係','体調不良','家庭事情','モチベ低下'];
+
+    const canvas=document.getElementById('wheelCanvas');
+    const ctx=canvas.getContext('2d');
+    const RADIUS=canvas.width/2;
+
+    const saved=localStorage.getItem(STORAGE_KEY);
+    document.getElementById('itemInput').value=saved??'当日欠勤, 悪口を言う, マウントを取る, 高圧的な態度, できることでもやらない, 責任転嫁';
+
+    function fitFont(label,maxPx){
+      let size=16;ctx.font=`${size}px sans-serif`;
+      while(size>10 && ctx.measureText(label).width>maxPx){size--;ctx.font=`${size}px sans-serif`;}
+      return size;
+    }
+
+    function buildFullList(actions){
+      const list=[];
+      actions.forEach(act=>{
+        list.push(act);
+        const causes=(CAUSE_MAP[act]||DEFAULT_CAUSES).slice(0,3);
+        causes.forEach(c=>list.push(`${act}→${c}`));
+      });
+      return list;
+    }
+
+    function drawWheel(items){
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      if(!items.length) return;
+      const angleStep=2*Math.PI/items.length;
+      items.forEach((label,i)=>{
+        const start=i*angleStep;
+        const end=start+angleStep;
+        ctx.beginPath();ctx.moveTo(RADIUS,RADIUS);
+        ctx.arc(RADIUS,RADIUS,RADIUS,start,end);ctx.closePath();
+        ctx.fillStyle=COLORS[i%COLORS.length];ctx.fill();
+        ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.stroke();
+        const mid=start+angleStep/2;
+        const tx=RADIUS+Math.cos(mid)*RADIUS*0.65;
+        const ty=RADIUS+Math.sin(mid)*RADIUS*0.65;
+        const fontSize=fitFont(label,angleStep*RADIUS*0.75);
+        ctx.fillStyle='#222';ctx.font=`${fontSize}px sans-serif`;
+        ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillText(label,tx,ty);
+      });
+    }
+
+    function getActions(){
+      return document.getElementById('itemInput').value.split(/[\n,]/).map(s=>s.trim()).filter(Boolean);
+    }
+
+    function updateWheel(){
+      const raw=document.getElementById('itemInput').value;
+      localStorage.setItem(STORAGE_KEY,raw);
+      const actions=getActions();
+      const allItems=buildFullList(actions);
+      drawWheel(allItems);
+    }
+
+    document.getElementById('updateBtn').addEventListener('click',updateWheel);
+    updateWheel();
+  </script>
+</body>
+</html>

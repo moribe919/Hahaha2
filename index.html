@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <title>単層ルーレット（原因自動付与＋保存）</title>
+  <title>単層ルーレット（原因リスト＋因果考察付き）</title>
   <style>
     body{font-family:sans-serif;background:#f9fafb;margin:0;padding:2rem;line-height:1.6;}
     h1{font-size:1.5rem;font-weight:700;margin-bottom:1rem;}
@@ -10,25 +10,39 @@
     button{display:inline-block;margin-top:.75rem;padding:.5rem 1.25rem;font-size:1rem;font-weight:600;border:none;border-radius:.5rem;cursor:pointer;transition:opacity .2s;}
     button:hover{opacity:.85;}
     #updateBtn{background:#3b82f6;color:#fff;}
-    #wheelContainer{position:relative;width:480px;height:480px;margin:2rem auto 0;}
+    #wheelContainer{position:relative;width:480px;height:480px;margin:2rem auto;}
     #wheelCanvas{width:100%;height:100%;}
+    section{margin-top:2rem;}
+    h2{font-size:1.25rem;margin-bottom:.5rem;}
+    ul{background:#fff;border:1px solid #e5e7eb;border-radius:.5rem;padding:1rem;list-style:none;margin:0;}
+    ul li{margin:.25rem 0;}
+    #analysis{background:#fff;border:1px solid #e5e7eb;border-radius:.5rem;padding:1rem;}
     p.note{font-size:.85rem;color:#555;margin-top:.5rem;}
   </style>
 </head>
 <body>
-  <h1>単層ルーレット（原因自動付与＋保存）</h1>
-  <p>▶️ 行動をカンマ／改行で入力 → <em>更新 & 保存</em><br>
-  原因は自動で追加されます（編集不要）。</p>
-  <textarea id="itemInput"></textarea>
-  <br><button id="updateBtn">更新 & 保存</button>
-  <p class="note">※ 行動リストは <em>localStorage</em> に保存されます。原因マッピングはコード内 <code>CAUSE_MAP</code> と <code>DEFAULT_CAUSES</code> で編集可能です。</p>
+  <h1>単層ルーレット（原因リスト＋因果考察付き）</h1>
+  <p>▶️ <strong>行動</strong>をカンマ／改行で入力すると、<strong>原因候補</strong>と<strong>因果考察</strong>を自動生成します。</p>
+  <textarea id="itemInput" placeholder="例: 当日欠勤, 悪口を言う ..."></textarea>
+  <br><button id="updateBtn">手動リフレッシュ</button>
+  <p class="note">入力は <em>localStorage</em> にリアルタイム保存されます。</p>
 
   <div id="wheelContainer"><canvas id="wheelCanvas" width="480" height="480"></canvas></div>
+
+  <section>
+    <h2>想定される原因リスト</h2>
+    <ul id="causeList"></ul>
+  </section>
+  <section>
+    <h2>因果関係の考察</h2>
+    <div id="analysis"></div>
+  </section>
 
   <script>
     const STORAGE_KEY='rouletteItems';
     const COLORS=['#60a5fa','#34d399','#fbbf24','#f87171','#a78bfa','#f472b6','#fb923c','#4ade80','#facc15','#38bdf8','#fda4af','#bef264'];
 
+    // 行動→原因テンプレート
     const CAUSE_MAP={
       '当日欠勤':['体調不良','家庭の事情','モチベ低下'],
       '悪口を言う':['ストレス','自己防衛'],
@@ -43,60 +57,78 @@
     const ctx=canvas.getContext('2d');
     const RADIUS=canvas.width/2;
 
-    const saved=localStorage.getItem(STORAGE_KEY);
-    document.getElementById('itemInput').value=saved??'当日欠勤, 悪口を言う, マウントを取る, 高圧的な態度, できることでもやらない, 責任転嫁';
+    const inputEl=document.getElementById('itemInput');
+    // 初期ロード
+    inputEl.value=localStorage.getItem(STORAGE_KEY)??'当日欠勤, 悪口を言う, マウントを取る';
 
+    // util
+    function splitActions(raw){
+      return raw.split(/[\n,]/).map(s=>s.trim()).filter(Boolean);
+    }
     function fitFont(label,maxPx){
       let size=16;ctx.font=`${size}px sans-serif`;
       while(size>10 && ctx.measureText(label).width>maxPx){size--;ctx.font=`${size}px sans-serif`;}
       return size;
     }
 
-    function buildFullList(actions){
-      const list=[];
-      actions.forEach(act=>{
-        list.push(act);
-        const causes=(CAUSE_MAP[act]||DEFAULT_CAUSES).slice(0,3);
-        causes.forEach(c=>list.push(`${act}→${c}`));
-      });
-      return list;
-    }
-
+    // ルーレット描画
     function drawWheel(items){
       ctx.clearRect(0,0,canvas.width,canvas.height);
       if(!items.length) return;
       const angleStep=2*Math.PI/items.length;
       items.forEach((label,i)=>{
-        const start=i*angleStep;
-        const end=start+angleStep;
-        ctx.beginPath();ctx.moveTo(RADIUS,RADIUS);
-        ctx.arc(RADIUS,RADIUS,RADIUS,start,end);ctx.closePath();
-        ctx.fillStyle=COLORS[i%COLORS.length];ctx.fill();
-        ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.stroke();
-        const mid=start+angleStep/2;
-        const tx=RADIUS+Math.cos(mid)*RADIUS*0.65;
-        const ty=RADIUS+Math.sin(mid)*RADIUS*0.65;
-        const fontSize=fitFont(label,angleStep*RADIUS*0.75);
-        ctx.fillStyle='#222';ctx.font=`${fontSize}px sans-serif`;
-        ctx.textAlign='center';ctx.textBaseline='middle';
-        ctx.fillText(label,tx,ty);
+        const start=i*angleStep, end=start+angleStep;
+        ctx.beginPath();ctx.moveTo(RADIUS,RADIUS);ctx.arc(RADIUS,RADIUS,RADIUS,start,end);ctx.closePath();
+        ctx.fillStyle=COLORS[i%COLORS.length];ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.stroke();
+        const mid=start+angleStep/2, tx=RADIUS+Math.cos(mid)*RADIUS*0.65, ty=RADIUS+Math.sin(mid)*RADIUS*0.65;
+        ctx.fillStyle='#222';ctx.font=`${fitFont(label,angleStep*RADIUS*0.75)}px sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(label,tx,ty);
       });
     }
 
-    function getActions(){
-      return document.getElementById('itemInput').value.split(/[\n,]/).map(s=>s.trim()).filter(Boolean);
+    // 原因リストと因果考察
+    function buildCauseData(actions){
+      const map={};
+      actions.forEach(act=>{map[act]=CAUSE_MAP[act]??DEFAULT_CAUSES;});
+      return map;
+    }
+    function renderCauseList(causeMap){
+      const ul=document.getElementById('causeList');
+      ul.innerHTML='';
+      Object.entries(causeMap).forEach(([act,causes])=>{
+        const li=document.createElement('li');
+        li.textContent=`${act}: ${causes.join(' / ')}`;
+        ul.appendChild(li);
+      });
+    }
+    function renderAnalysis(causeMap){
+      const div=document.getElementById('analysis');
+      div.innerHTML='';
+      Object.entries(causeMap).forEach(([act,causes])=>{
+        const p=document.createElement('p');
+        p.textContent=`「${act}」は ${causes[0]} や ${causes[1]||causes[0]} が影響している可能性が高い。特に組織内の環境改善や個人サポートが鍵となりうる。`;
+        div.appendChild(p);
+      });
     }
 
-    function updateWheel(){
-      const raw=document.getElementById('itemInput').value;
+    // メイン更新
+    function updateAll(){
+      const raw=inputEl.value;
       localStorage.setItem(STORAGE_KEY,raw);
-      const actions=getActions();
-      const allItems=buildFullList(actions);
-      drawWheel(allItems);
+      const actions=splitActions(raw);
+      const causeMap=buildCauseData(actions);
+      const wheelItems=[...actions]; // 行動のみ表示（シンプルに保つ）
+      drawWheel(wheelItems);
+      renderCauseList(causeMap);
+      renderAnalysis(causeMap);
     }
 
-    document.getElementById('updateBtn').addEventListener('click',updateWheel);
-    updateWheel();
+    // リアルタイム保存＆更新
+    inputEl.addEventListener('input',updateAll);
+    document.getElementById('updateBtn').addEventListener('click',updateAll);
+    window.addEventListener('beforeunload',()=>localStorage.setItem(STORAGE_KEY,inputEl.value));
+
+    // 初期描画
+    updateAll();
   </script>
 </body>
 </html>
